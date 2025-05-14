@@ -140,19 +140,7 @@ class FileChangeHandler(FileSystemEventHandler):
                     logger.info(f"Restart required due to change in {rel_path}")
                     restart_container()
 
-    def on_created(self, event):
-        if not event.is_directory:
-            self.on_modified(event)
 
-    def on_deleted(self, event):
-        if event.is_directory:
-            return
-        rel_path = os.path.relpath(event.src_path, CODE_DIR)
-        # logger.debug(f"File {rel_path} deleted")
-        update_hash_in_db(rel_path, "", "MISSING")
-
-
-# === Main Execution ===
 def main():
     logger.info("Starting up the script for live reloading")
     setup_db()

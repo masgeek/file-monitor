@@ -4,6 +4,7 @@ import sqlite3
 import hashlib
 import subprocess
 import signal
+import threading
 from dotenv import load_dotenv
 from loguru import logger
 from watchdog.observers import Observer
@@ -26,6 +27,9 @@ FILE_EXTENSIONS = os.getenv("FILE_EXTENSIONS", ".R").split(",")  # List of file 
 # === Logger Setup ===
 logger.add(LOG_FILE, rotation="500 KB", retention="10 days", level="INFO")
 
+# Global rebuild flag
+rebuild_lock = threading.Lock()
+is_rebuilding = False
 # === Hash DB Functions ===
 def setup_db():
     with sqlite3.connect(HASH_DB_FILE) as conn:
@@ -79,17 +83,25 @@ signal.signal(signal.SIGTERM, cleanup)
 
 # === Docker Actions ===
 def rebuild_container():
-    logger.info(f"Rebuilding container {CONTAINER_NAME}")
-    subprocess.run(["docker", "compose", "-f", DOCKER_COMPOSE_PATH, "down"])
-    result = subprocess.run(["docker", "compose", "-f", DOCKER_COMPOSE_PATH, "up", "-d", "--build", CONTAINER_NAME])
-    if result.returncode == 0:
-        logger.info("Container rebuilt successfully.")
-        hashes = generate_file_hashes()
-        for file, new_hash in hashes.items():
-            old_hash = get_file_hash_from_db(file)
-            update_hash_in_db(file, old_hash, new_hash)
-    else:
-        logger.error("Failed to rebuild container.")
+    global is_rebuilding
+
+    if rebuild_lock.locked():
+        logger.warning("Rebuild already in progress. Skipping.")
+        return
+    with rebuild_lock:
+        is_rebuilding = True
+        logger.info(f"Rebuilding container {CONTAINER_NAME}")
+        subprocess.run(["docker", "compose", "-f", DOCKER_COMPOSE_PATH, "down"])
+        result = subprocess.run(["docker", "compose", "-f", DOCKER_COMPOSE_PATH, "up", "-d", "--build", CONTAINER_NAME])
+        if result.returncode == 0:
+            logger.info("Container rebuilt successfully.")
+            hashes = generate_file_hashes()
+            for file, new_hash in hashes.items():
+                old_hash = get_file_hash_from_db(file)
+                update_hash_in_db(file, old_hash, new_hash)
+        else:
+            logger.error("Failed to rebuild container.")
+        is_rebuilding = False
 
 
 def restart_container():
@@ -114,6 +126,7 @@ class FileChangeHandler(FileSystemEventHandler):
             if new_hash != old_hash:
                 file_name = os.path.basename(rel_path)
                 logger.info(f"Detected change of {file_name} in {rel_path}")
+                update_hash_in_db(rel_path, old_hash, new_hash)
                 if file_name in SPECIAL_FILES:
                     try:
                         choice = input(f"Rebuild due to change in special file {rel_path}? (y/n) [auto y]: ")
@@ -126,7 +139,6 @@ class FileChangeHandler(FileSystemEventHandler):
                 else:
                     logger.info(f"Restart required due to change in {rel_path}")
                     restart_container()
-                update_hash_in_db(rel_path, old_hash, new_hash)
 
     def on_created(self, event):
         if not event.is_directory:

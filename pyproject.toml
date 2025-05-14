@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "file-monitor"
+version = "1.0.0"
+description = "File changes monitor"
+authors = ["Sammy Barasa"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+watchdog = "^6.0.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

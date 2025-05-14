@@ -9,38 +9,30 @@ from loguru import logger
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-# === Load Environment Variables ===
-load_dotenv()
+# === Load Environment Variables from One Level Up ===
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.env'))
 
 # === Configuration ===
-DOCKERFILE_PATH = os.getenv("DOCKERFILE_PATH", "./Dockerfile")
-CODE_DIR = os.getenv("CODE_DIR", "/home/masgeek/projects/akilimo-compute")
+DOCKERFILE_PATH = os.getenv("DOCKERFILE_PATH", "/home/masgeek/dev/r/akilimo-compute/Dockerfile")
+CODE_DIR = os.getenv("CODE_DIR", "/home/masgeek/dev/r/akilimo-compute")
 CONTAINER_NAME = os.getenv("CONTAINER_NAME", "akilimo-compute")
 PROMPT_TIMEOUT = int(os.getenv("PROMPT_TIMEOUT", 120))
 LOG_FILE = os.getenv("LOG_FILE", "./rebuild_log.txt")
-HASH_DB_FILE = os.getenv("HASH_DB_FILE", "file_tracker.sqlite")
+HASH_DB_FILE = os.getenv("HASH_DB_FILE", "file_tracker.db")
 SPECIAL_FILES = os.getenv("SPECIAL_FILES", "api.R,api-wrapper-orig.R").split(",")
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+DOCKER_COMPOSE_PATH = os.getenv("DOCKER_COMPOSE_PATH", "../docker-compose.yml")  # One directory up
+FILE_EXTENSIONS = os.getenv("FILE_EXTENSIONS", ".R").split(",")  # List of file extensions to track
 
 # === Logger Setup ===
-logger.add(LOG_FILE, rotation="500 KB", retention="10 days", level=LOG_LEVEL)
-logger.debug(
-    f"Configuration loaded: CODE_DIR={CODE_DIR}, CONTAINER_NAME={CONTAINER_NAME}, SPECIAL_FILES={SPECIAL_FILES}")
-
+logger.add(LOG_FILE, rotation="500 KB", retention="10 days", level="INFO")
 
 # === Hash DB Functions ===
 def setup_db():
     with sqlite3.connect(HASH_DB_FILE) as conn:
-        conn.execute('''CREATE TABLE IF NOT EXISTS file_hashes
-                        (
-                            file_name
-                            TEXT
-                            PRIMARY
-                            KEY,
-                            old_hash
-                            TEXT,
-                            new_hash
-                            TEXT
+        conn.execute('''CREATE TABLE IF NOT EXISTS file_hashes (
+                            file_name TEXT PRIMARY KEY,
+                            old_hash TEXT,
+                            new_hash TEXT
                         )''')
 
 
@@ -64,11 +56,11 @@ def get_file_hash(file):
     return "MISSING"
 
 
-def generate_r_file_hashes():
+def generate_file_hashes():
     hashes = {}
     for root, _, files in os.walk(CODE_DIR):
         for file in files:
-            if file.endswith(".R") and not file.startswith("."):
+            if any(file.endswith(ext) for ext in FILE_EXTENSIONS) and not file.startswith("."):
                 rel_path = os.path.relpath(os.path.join(root, file), CODE_DIR)
                 hashes[rel_path] = get_file_hash(os.path.join(root, file))
     return hashes
@@ -76,7 +68,7 @@ def generate_r_file_hashes():
 
 def cleanup(signal_num, frame):
     logger.info("Cleaning up...")
-    subprocess.run(["docker", "compose", "down"])
+    subprocess.run(["docker", "compose", "-f", DOCKER_COMPOSE_PATH, "down"])
     logger.info("Exiting script.")
     exit(0)
 
@@ -88,27 +80,22 @@ signal.signal(signal.SIGTERM, cleanup)
 # === Docker Actions ===
 def rebuild_container():
     logger.info(f"Rebuilding container {CONTAINER_NAME}")
-    subprocess.run(["docker", "compose", "down"])
-    result = subprocess.run(["docker", "compose", "up", "-d", "--build", CONTAINER_NAME], capture_output=True,
-                            text=True)
+    subprocess.run(["docker", "compose", "-f", DOCKER_COMPOSE_PATH, "down"])
+    result = subprocess.run(["docker", "compose", "-f", DOCKER_COMPOSE_PATH, "up", "-d", "--build", CONTAINER_NAME])
     if result.returncode == 0:
         logger.info("Container rebuilt successfully.")
-        hashes = generate_r_file_hashes()
+        hashes = generate_file_hashes()
         for file, new_hash in hashes.items():
             old_hash = get_file_hash_from_db(file)
             update_hash_in_db(file, old_hash, new_hash)
     else:
-        logger.error(f"Failed to rebuild container.\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}")
+        logger.error("Failed to rebuild container.")
 
 
 def restart_container():
     logger.info(f"Restarting container {CONTAINER_NAME}")
-    result = subprocess.run(["docker", "compose", "restart", CONTAINER_NAME], capture_output=True, text=True)
-    if result.returncode == 0:
-        logger.info("Container restarted successfully.")
-    else:
-        logger.error(f"Failed to restart container.\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}")
-    hashes = generate_r_file_hashes()
+    subprocess.run(["docker", "compose", "-f", DOCKER_COMPOSE_PATH, "restart", CONTAINER_NAME])
+    hashes = generate_file_hashes()
     for file, new_hash in hashes.items():
         old_hash = get_file_hash_from_db(file)
         update_hash_in_db(file, old_hash, new_hash)
@@ -120,7 +107,7 @@ class FileChangeHandler(FileSystemEventHandler):
         if event.is_directory:
             return
 
-        if event.src_path.endswith(".R") and not event.src_path.startswith("."):
+        if any(event.src_path.endswith(ext) for ext in FILE_EXTENSIONS) and not event.src_path.startswith("."):
             rel_path = os.path.relpath(event.src_path, CODE_DIR)
             new_hash = get_file_hash(event.src_path)
             old_hash = get_file_hash_from_db(rel_path)
@@ -131,7 +118,7 @@ class FileChangeHandler(FileSystemEventHandler):
                         choice = input(f"Rebuild due to change in special file {rel_path}? (y/n) [auto y]: ")
                     except Exception:
                         choice = 'y'
-                    if choice.lower() in ['y', '']:
+                    if choice.lower() in ['y', ''] :
                         rebuild_container()
                     else:
                         logger.info(f"Skipped rebuild for {rel_path}")
@@ -148,15 +135,15 @@ class FileChangeHandler(FileSystemEventHandler):
         if event.is_directory:
             return
         rel_path = os.path.relpath(event.src_path, CODE_DIR)
-        logger.info(f"File {rel_path} deleted")
+        # logger.debug(f"File {rel_path} deleted")
         update_hash_in_db(rel_path, "", "MISSING")
 
 
 # === Main Execution ===
 def main():
-    logger.info("Starting up")
+    logger.info("Starting up the script")
     setup_db()
-    initial_hashes = generate_r_file_hashes()
+    initial_hashes = generate_file_hashes()
     dockerfile_hash = get_file_hash(DOCKERFILE_PATH)
     for file, hash_val in initial_hashes.items():
         update_hash_in_db(file, "", hash_val)
@@ -170,10 +157,7 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
-    except Exception as e:
-        logger.exception("Unhandled exception occurred")
-    finally:
-        observer.join()
+    observer.join()
 
 
 if __name__ == '__main__':

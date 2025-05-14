@@ -5,10 +5,13 @@ description = "File changes monitor"
 authors = ["Sammy Barasa"]
 license = "MIT"
 readme = "README.md"
+package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.12"
 watchdog = "^6.0.0"
+python-dotenv = "^1.1.0"
+loguru = "^0.7.3"
 
 
 [build-system]

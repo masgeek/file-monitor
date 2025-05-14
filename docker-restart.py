@@ -112,8 +112,9 @@ class FileChangeHandler(FileSystemEventHandler):
             new_hash = get_file_hash(event.src_path)
             old_hash = get_file_hash_from_db(rel_path)
             if new_hash != old_hash:
-                logger.info(f"Detected change in {rel_path}")
-                if rel_path in SPECIAL_FILES:
+                file_name = os.path.basename(rel_path)
+                logger.info(f"Detected change of {file_name} in {rel_path}")
+                if file_name in SPECIAL_FILES:
                     try:
                         choice = input(f"Rebuild due to change in special file {rel_path}? (y/n) [auto y]: ")
                     except Exception:
@@ -141,7 +142,7 @@ class FileChangeHandler(FileSystemEventHandler):
 
 # === Main Execution ===
 def main():
-    logger.info("Starting up the script")
+    logger.info("Starting up the script for live reloading")
     setup_db()
     initial_hashes = generate_file_hashes()
     dockerfile_hash = get_file_hash(DOCKERFILE_PATH)

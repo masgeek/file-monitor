@@ -13,7 +13,6 @@ def cleanup(observer):
     logger.info("Stopping observer and cleaning up...")
     observer.stop()
     observer.join()
-    stop_container()
     logger.info("Shutdown complete.")
 
 

@@ -4,8 +4,7 @@ from loguru import logger
 from hashlib import sha1
 
 from file_monitor import config
-from file_monitor.docker_utils import rebuild_container, restart_container, remove_container, start_container, \
-    stop_container
+from file_monitor.docker_utils import rebuild_container, restart_container
 
 
 class FileChangeHandler(FileSystemEventHandler):
@@ -31,10 +30,7 @@ class FileChangeHandler(FileSystemEventHandler):
             if new_hash != self.extra_hashes.get(full_path):
                 logger.info(f"Dockerfile changed: {full_path}")
                 self.extra_hashes[full_path] = new_hash
-                result = rebuild_container()
-                if result:
-                    stop_container()
-                    start_container()
+                rebuild_container()
             return
 
         # Regular source file handling
@@ -47,18 +43,16 @@ class FileChangeHandler(FileSystemEventHandler):
                 self.session_hashes[rel_path] = new_hash
                 file_name = os.path.basename(rel_path)
 
-                logger.info(f"Detected change in: {rel_path}")
+                logger.info(f"Detected change in: {rel_path} rebuilding image")
 
                 if file_name in config.SPECIAL_FILES:
                     try:
-                        choice = input(f"Rebuild due to special file {rel_path}? (y/n) [auto y]: ")
+                        choice = 'y'  # input(f"Rebuild due to special file {rel_path}? (y/n) [auto y]: ")
                     except Exception:
                         choice = 'y'
                     if choice.lower() in ['y', '']:
-                        result = rebuild_container()
-                        if result:
-                            stop_container()
-                            start_container()
+                        rebuild_container()
+
                     else:
                         logger.info(f"Skipped rebuild for {rel_path}")
                 else:

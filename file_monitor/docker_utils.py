@@ -16,36 +16,35 @@ DOCKER_COMPOSE_PATH = config.DOCKER_COMPOSE_PATH
 CONTAINER_NAME = config.CONTAINER_NAME
 
 
-def start_container():
+def build_container() -> bool:
+    """Builds the Docker container."""
+    logger.info(f"Building container {CONTAINER_NAME}")
+    result = run(["docker", "compose", "-f", DOCKER_COMPOSE_PATH, "build", CONTAINER_NAME, "--no-cache"])
+    if result.returncode == 0:
+        logger.info("Container built successfully.")
+        return True
+    else:
+        logger.error("Failed to build container.")
+        return False
+
+
+def start_container() -> bool:
     """Starts the Docker container."""
     logger.info(f"Starting container {CONTAINER_NAME}")
-    result = run(["docker", "compose", "-f", DOCKER_COMPOSE_PATH, "up", "-d"])
+    result = run(["docker", "compose", "-f", DOCKER_COMPOSE_PATH, "up", "-d", CONTAINER_NAME])
     if result.returncode == 0:
         logger.info("Container started successfully.")
         return True
     else:
         logger.error("Failed to start container.")
-    return False
+        return False
 
 
-def rebuild_and_launch_container(show_logs: bool = True):
-    """Rebuilds the Docker container."""
-    if state.rebuild_lock.locked():
-        logger.warning("Rebuild already in progress. Skipping.")
-        return
-
-    with state.rebuild_lock:
-        logger.info(f"Rebuilding container {CONTAINER_NAME}")
-        result = run([
-            "docker", "compose", "-f", DOCKER_COMPOSE_PATH,
-            "up", "-d", "--build", CONTAINER_NAME
-        ])
-        if result.returncode == 0:
-            logger.info("Container rebuilt successfully.")
-            if show_logs:
-                _show_logs_in_background()
-        else:
-            logger.error("Failed to rebuild container.")
+def stop_container() -> bool:
+    """Stops the Docker container."""
+    logger.info(f"Stopping container {CONTAINER_NAME}")
+    result = run(["docker", "compose", "-f", DOCKER_COMPOSE_PATH, "stop", CONTAINER_NAME])
+    return result.returncode == 0
 
 
 def restart_container(show_logs: bool = True):
@@ -56,10 +55,29 @@ def restart_container(show_logs: bool = True):
         _show_logs_in_background()
 
 
-def stop_container():
-    """Stops the Docker container."""
-    logger.info(f"Stopping container {CONTAINER_NAME}")
-    run(["docker", "compose", "-f", DOCKER_COMPOSE_PATH, "stop", CONTAINER_NAME])
+def rebuild_then_start(show_logs: bool = True):
+    """Safely rebuilds and restarts the container, with optional log display."""
+    if state.rebuild_lock.locked():
+        logger.warning("Rebuild already in progress. Skipping.")
+        return
+
+    with state.rebuild_lock:
+        if not stop_container():
+            logger.error("Failed to stop container. Aborting rebuild.")
+            return
+
+        if not build_container():
+            logger.error("Container build failed. Aborting start.")
+            return
+
+        if not start_container():
+            logger.error("Container failed to start.")
+            return
+
+        if show_logs:
+            _show_logs_in_background()
+
+        logger.success("Rebuild and restart complete.")
 
 
 def remove_container():
@@ -72,7 +90,6 @@ def _show_logs_in_background():
     global _is_streaming_logs
 
     if _is_streaming_logs:
-        # Already streaming logs, don't start another
         return
 
     def _logs():

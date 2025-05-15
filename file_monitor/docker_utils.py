@@ -27,6 +27,25 @@ def start_container():
     return False
 
 
+def rebuild_and_launch_container(show_logs: bool = True):
+    """
+    Rebuild and launch the container using a single command.
+    """
+    logger.info(f"Rebuilding and launching container '{CONTAINER_NAME}'")
+
+    result = run([
+        "docker", "compose", "-f", DOCKER_COMPOSE_PATH,
+        "up", "-d", "--build", CONTAINER_NAME
+    ])
+
+    if result.returncode == 0:
+        logger.info("Container rebuilt and launched successfully.")
+        if show_logs:
+            _show_logs_in_background()
+    else:
+        logger.error("Failed to rebuild and launch container.")
+
+
 def rebuild_container(show_logs: bool = True):
     """Rebuilds the Docker container."""
     if state.rebuild_lock.locked():

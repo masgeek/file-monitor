@@ -14,3 +14,4 @@ HASH_DB_FILE = os.getenv("HASH_DB_FILE", "file_tracker.db")
 SPECIAL_FILES = os.getenv("SPECIAL_FILES", "api.R,api-wrapper-orig.R").split(",")
 DOCKER_COMPOSE_PATH = os.getenv("DOCKER_COMPOSE_PATH", "docker-compose.yml")  # One directory up
 FILE_EXTENSIONS = os.getenv("FILE_EXTENSIONS", ".R").split(",")  # List of file extensions to track
+REBUILD_DELAY = os.getenv("REBUILD_DELAY", 30)

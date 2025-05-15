@@ -42,21 +42,8 @@ class FileChangeHandler(FileSystemEventHandler):
             if new_hash != old_hash:
                 self.session_hashes[rel_path] = new_hash
                 file_name = os.path.basename(rel_path)
-
-                logger.info(f"Detected change in: {rel_path} rebuilding image")
-
-                if file_name in config.SPECIAL_FILES:
-                    try:
-                        choice = 'y'  # input(f"Rebuild due to special file {rel_path}? (y/n) [auto y]: ")
-                    except Exception:
-                        choice = 'y'
-                    if choice.lower() in ['y', '']:
-                        rebuild_container()
-
-                    else:
-                        logger.info(f"Skipped rebuild for {rel_path}")
-                else:
-                    restart_container()
+                logger.info(f"Detected change in: {rel_path} for {file_name}rebuilding image")
+                rebuild_container()
 
     def on_created(self, event):
         if not event.is_directory:

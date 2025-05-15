@@ -4,6 +4,7 @@ import signal
 import time
 from loguru import logger
 from watchdog.observers import Observer
+
 from file_monitor.file_change_handler import FileChangeHandler
 from file_monitor.config import CODE_DIR
 from file_monitor.docker_utils import stop_container

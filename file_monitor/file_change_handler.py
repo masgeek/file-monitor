@@ -4,7 +4,7 @@ from loguru import logger
 from hashlib import sha1
 
 from file_monitor import config
-from file_monitor.docker_utils import rebuild_container, restart_container
+from file_monitor.docker_utils import rebuild_and_launch_container
 
 
 class FileChangeHandler(FileSystemEventHandler):
@@ -30,7 +30,7 @@ class FileChangeHandler(FileSystemEventHandler):
             if new_hash != self.extra_hashes.get(full_path):
                 logger.info(f"Dockerfile changed: {full_path}")
                 self.extra_hashes[full_path] = new_hash
-                rebuild_container()
+                rebuild_and_launch_container()
             return
 
         # Regular source file handling
@@ -43,7 +43,7 @@ class FileChangeHandler(FileSystemEventHandler):
                 self.session_hashes[rel_path] = new_hash
                 file_name = os.path.basename(rel_path)
                 logger.info(f"Detected change in: {rel_path} for {file_name}rebuilding image")
-                rebuild_container()
+                rebuild_and_launch_container()
 
     def on_created(self, event):
         if not event.is_directory:
